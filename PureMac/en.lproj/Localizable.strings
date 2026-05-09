@@ -120,3 +120,15 @@
 
 /* Notifications */
 "Found %@ of junk files." = "Found %@ of junk files.";
+
+/* Node Cache */
+"Node Cache" = "Node Cache";
+"npm, yarn, and pnpm download caches" = "npm, yarn, and pnpm download caches";
+"npm cache" = "npm cache";
+"yarn classic cache" = "yarn classic cache";
+"pnpm content-addressable store" = "pnpm content-addressable store";
+
+/* Docker Cache */
+"Docker Cache" = "Docker Cache";
+"Docker images, containers, and build cache" = "Docker images, containers, and build cache";
+"Reclaimable (run `docker system prune -af`)" = "Reclaimable (run `docker system prune -af`)";

@@ -14,6 +14,8 @@ enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
     case xcodeJunk = "Xcode Junk"
     case visualStudioJunk = "Visual Studio Junk"
     case brewCache = "Brew Cache"
+    case nodeCache = "Node Cache"
+    case dockerCache = "Docker Cache"
 
     var id: String { rawValue }
 
@@ -30,6 +32,8 @@ enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
         case .xcodeJunk: return "hammer.fill"
         case .visualStudioJunk: return "chevron.left.forwardslash.chevron.right"
         case .brewCache: return "mug.fill"
+        case .nodeCache: return "leaf.fill"
+        case .dockerCache: return "shippingbox.fill"
         }
     }
 
@@ -46,6 +50,8 @@ enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
         case .xcodeJunk: return "Derived data, archives, and simulators"
         case .visualStudioJunk: return "bin and obj build outputs from .NET projects"
         case .brewCache: return "Homebrew download cache"
+        case .nodeCache: return "npm, yarn, and pnpm download caches"
+        case .dockerCache: return "Docker images, containers, and build cache"
         }
     }
 
@@ -62,6 +68,8 @@ enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
         case .xcodeJunk: return .cyan
         case .visualStudioJunk: return .indigo
         case .brewCache: return .mint
+        case .nodeCache: return .pink
+        case .dockerCache: return .indigo
         }
     }
 

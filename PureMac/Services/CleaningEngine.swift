@@ -32,16 +32,42 @@ actor CleaningEngine {
                 let itemURL = URL(fileURLWithPath: item.path)
                 guard fileManager.fileExists(atPath: item.path) else { continue }
 
-                // Security: resolve symlinks and validate the real path
-                let resolved = itemURL.resolvingSymlinksInPath().path
-                guard isSafeToDelete(item: item, resolvedPath: resolved) else {
+                // Security: resolve symlinks, validate the real path, delete
+                // through the resolved URL. Deleting through the unresolved
+                // path lets an attacker-at-same-UID swap a component to a
+                // symlink after the check and have us follow it.
+                let resolvedURL = itemURL.resolvingSymlinksInPath()
+                let resolved = resolvedURL.path
+
+                // Large files surfaced by scanLargeFiles are per-file items
+                // under Downloads/Documents/Desktop; those get a narrower check.
+                // System Data and Visual Studio artifacts retain their dedicated
+                // safety allow-lists from the KovaForge/McoreD work.
+                let pathAccepted: Bool = {
+                    if item.category == .largeFiles {
+                        return isExplicitSingleFileDeletable(resolvedPath: resolved)
+                    }
+                    return isSafeToDelete(item: item, resolvedPath: resolved)
+                }()
+                guard pathAccepted else {
                     let msg = "Skipped symlink or unsafe path: \(item.path) -> \(resolved)"
                     Logger.shared.log(msg, level: .warning)
                     result.errors.append(msg)
                     continue
                 }
 
-                try fileManager.removeItem(atPath: item.path)
+                // Narrow the TOCTOU window: re-resolve right before the delete
+                // and require the resolved path to still match. Any concurrent
+                // swap between check and delete aborts the operation.
+                let reResolved = URL(fileURLWithPath: item.path).resolvingSymlinksInPath().path
+                guard reResolved == resolved else {
+                    let msg = "Aborting delete: path resolution changed between check and unlink for \(item.path)"
+                    Logger.shared.log(msg, level: .warning)
+                    result.errors.append(msg)
+                    continue
+                }
+
+                try fileManager.removeItem(at: resolvedURL)
                 result.freedSpace += item.size
                 result.itemsCleaned += 1
             } catch {
@@ -141,7 +167,11 @@ actor CleaningEngine {
     // MARK: - Helpers
 
     /// Validates that a resolved path is safe to delete.
-    /// Prevents symlink attacks where a link in ~/Library/Caches points to ~/.ssh or ~/Documents.
+    /// Prevents symlink attacks where a link in ~/Library/Caches points to ~/.ssh.
+    /// Downloads, Documents, and Desktop are intentionally NOT whole-subtree
+    /// allow-listed - scanLargeFiles emits per-file items instead, so those
+    /// deletions can still happen through the explicit per-item flow.
+    /// System Data and Visual Studio artifacts require dedicated validators.
     private func isSafeToDelete(item: CleanableItem, resolvedPath: String) -> Bool {
         let home = fileManager.homeDirectoryForCurrentUser.path
         let normalizedPath = (resolvedPath as NSString).standardizingPath
@@ -163,22 +193,22 @@ actor CleaningEngine {
             "\(home)/Library/LaunchAgents",
             "\(home)/Library/Mail Downloads",
             "\(home)/.Trash",
-            "\(home)/Downloads",
-            "\(home)/Documents",
-            "\(home)/Desktop",
             "/Library/Caches",
             "/Library/Logs",
             "/private/var/log",
             "/private/var/tmp",
             "/tmp",
         ]
+        // Allow whole-subtree deletion only; require a trailing "/" on the
+        // root match so siblings like "/tmpfoo" cannot pass the prefix check.
         if allowedRoots.contains(where: { root in
-            normalizedPath.hasPrefix(root)
+            let rootWithSeparator = root.hasSuffix("/") ? root : root + "/"
+            return normalizedPath == root || normalizedPath.hasPrefix(rootWithSeparator)
         }) {
             return true
         }
 
-        return isVisualStudioBuildArtifact(path: normalizedPath)
+        return item.category == .visualStudioJunk && isVisualStudioBuildArtifact(path: normalizedPath)
     }
 
     private func isSafeSystemDataTarget(path: String) -> Bool {
@@ -232,6 +262,20 @@ actor CleaningEngine {
             let itemExtension = URL(fileURLWithPath: item).pathExtension.lowercased()
             return dotNetProjectExtensions.contains(itemExtension)
         }
+    }
+
+    /// Allow a single-file delete under Downloads/Documents/Desktop when it
+    /// was explicitly surfaced by a scanner (e.g. scanLargeFiles). Whole-subtree
+    /// deletion of those roots remains blocked.
+    func isExplicitSingleFileDeletable(resolvedPath: String) -> Bool {
+        let home = fileManager.homeDirectoryForCurrentUser.path
+        let perFileRoots = [
+            "\(home)/Downloads/",
+            "\(home)/Documents/",
+            "\(home)/Desktop/",
+        ]
+        let normalized = (resolvedPath as NSString).standardizingPath
+        return perFileRoots.contains { normalized.hasPrefix($0) }
     }
 
     private func getCurrentFreeSpace() -> Int64 {

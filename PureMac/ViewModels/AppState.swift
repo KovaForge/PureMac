@@ -42,6 +42,7 @@ final class AppState: ObservableObject {
     @Published var isSearchingOrphans: Bool = false
     @Published var isLoadingApps: Bool = false
     @Published var isScanningAppFiles: Bool = false
+    @Published var removalError: String?
 
     // MARK: - Services
 
@@ -76,7 +77,13 @@ final class AppState: ObservableObject {
         scheduler.setTrigger { [weak self] in
             await self?.runScheduledScan()
         }
-        scheduler.start()
+        // Only arm the scheduler once onboarding has completed. Before the
+        // first launch the defaults plist may have been attacker-planted with
+        // autoClean=true - waiting for onboarding ensures a human consents to
+        // auto-clean before we start honoring it.
+        if UserDefaults.standard.bool(forKey: "PureMac.OnboardingComplete") {
+            scheduler.start()
+        }
     }
 
     // MARK: - App Loading
@@ -115,19 +122,75 @@ final class AppState: ObservableObject {
     }
 
     func removeSelectedFiles() {
-        var errors: [String] = []
-        for url in selectedFiles {
-            do {
-                try FileManager.default.removeItem(at: url)
-            } catch {
-                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
-                Logger.shared.log("Failed to remove \(url.path): \(error.localizedDescription)", level: .error)
+        // Safety guard: never allow a high-risk home dotpath (listed in
+        // Conditions.swift) to be sent to trashViaFinder no matter how it
+        // ended up in the selection. Catches selection-time additions that
+        // slipped past the scanner-side filters.
+        let allURLs = Array(selectedFiles)
+        let (urls, blocked): ([URL], [URL]) = allURLs.reduce(into: ([], [])) { acc, url in
+            let resolved = url.resolvingSymlinksInPath().path
+            let isBlocked = highRiskHomeDotPaths.contains { root in
+                resolved == root || resolved.hasPrefix(root + "/")
+            }
+            if isBlocked {
+                acc.1.append(url)
+            } else {
+                acc.0.append(url)
             }
         }
-        discoveredFiles.removeAll { selectedFiles.contains($0) }
-        selectedFiles.removeAll()
-        if errors.isEmpty {
-            Logger.shared.log("Successfully removed all selected files", level: .info)
+        removalError = nil
+        if !blocked.isEmpty {
+            let blockedList = blocked.map(\.path).joined(separator: ", ")
+            Logger.shared.log("Refused to delete \(blocked.count) high-risk home dotpath(s): \(blockedList)", level: .warning)
+            selectedFiles.subtract(blocked)
+        }
+        guard !urls.isEmpty else {
+            if !blocked.isEmpty {
+                removalError = "Refused to delete \(blocked.count) protected item(s) (home credential directory or similar)."
+            }
+            return
+        }
+        trashViaFinder(urls: urls) { [weak self] success in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Check which files were actually removed from disk
+                let removed = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }
+                if !removed.isEmpty {
+                    self.discoveredFiles.removeAll { removed.contains($0) }
+                    self.selectedFiles.subtract(removed)
+                    Logger.shared.log("Removed \(removed.count) files", level: .info)
+                }
+                let failed = urls.count - removed.count
+                if failed > 0 {
+                    self.removalError = "\(failed) file\(failed == 1 ? "" : "s") could not be removed. Grant Full Disk Access in System Settings → Privacy & Security to allow PureMac to manage all files."
+                    Logger.shared.log("Failed to remove \(failed) files — likely missing FDA", level: .error)
+                }
+            }
+        }
+    }
+
+    /// Uses Finder via AppleScript to move files to Trash.
+    /// This triggers the standard macOS authorization prompt for protected files.
+    private func trashViaFinder(urls: [URL], completion: @escaping (Bool) -> Void) {
+        let posixPaths = urls.map { "\"\($0.path)\"" }.joined(separator: ", ")
+        let script = """
+        tell application "Finder"
+            set theFiles to {}
+            repeat with p in {\(posixPaths)}
+                set end of theFiles to (POSIX file p as alias)
+            end repeat
+            delete theFiles
+        end tell
+        """
+        DispatchQueue.global(qos: .userInitiated).async {
+            let appleScript = NSAppleScript(source: script)
+            var errorInfo: NSDictionary?
+            appleScript?.executeAndReturnError(&errorInfo)
+            let success = errorInfo == nil
+            if let errorInfo {
+                Logger.shared.log("Finder trash error: \(errorInfo)", level: .error)
+            }
+            completion(success)
         }
     }
 
@@ -157,7 +220,9 @@ final class AppState: ObservableObject {
 
                     if !belongsToApp {
                         let fullPath = URL(fileURLWithPath: path).appendingPathComponent(item)
-                        orphans.append(fullPath)
+                        if OrphanSafetyPolicy.isSafeCandidate(fullPath) {
+                            orphans.append(fullPath)
+                        }
                     }
                 }
             }

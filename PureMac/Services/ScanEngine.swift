@@ -37,6 +37,10 @@ actor ScanEngine {
             return scanVisualStudioJunk()
         case .brewCache:
             return scanBrewCache()
+        case .nodeCache:
+            return scanNodeCache()
+        case .dockerCache:
+            return scanDockerCache()
         }
     }
 
@@ -367,7 +371,19 @@ actor ScanEngine {
             "\(home)/Library/Caches/Homebrew",
         ]
 
-        // Detect custom HOMEBREW_CACHE via `brew --cache`
+        // Known-good Homebrew cache roots. Any path returned by `brew --cache`
+        // that is NOT inside one of these is refused - prevents an attacker
+        // setting HOMEBREW_CACHE=$HOME/Documents from steering our cleanup.
+        let knownBrewRoots = [
+            "\(home)/Library/Caches/Homebrew",
+            "/opt/homebrew/Library/Caches",
+            "/usr/local/Homebrew/Library/Caches",
+            "/Library/Caches/Homebrew",
+        ]
+
+        // Detect custom HOMEBREW_CACHE via `brew --cache`. Strip HOMEBREW_*
+        // from the child env so an attacker can't steer the output via
+        // launchctl setenv, then validate the output against knownBrewRoots.
         let brewBinPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
         var detectedCustomCache = false
         for brewBin in brewBinPaths {
@@ -375,6 +391,11 @@ actor ScanEngine {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: brewBin)
             task.arguments = ["--cache"]
+            var sanitizedEnv = ProcessInfo.processInfo.environment
+            for key in Array(sanitizedEnv.keys) where key.hasPrefix("HOMEBREW_") {
+                sanitizedEnv.removeValue(forKey: key)
+            }
+            task.environment = sanitizedEnv
             let pipe = Pipe()
             task.standardOutput = pipe
             task.standardError = Pipe()
@@ -385,6 +406,13 @@ actor ScanEngine {
                 if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !output.isEmpty {
                     let normalized = normalizePath(output)
+                    let isKnown = knownBrewRoots.contains { root in
+                        normalized == root || normalized.hasPrefix(root + "/")
+                    }
+                    guard isKnown else {
+                        Logger.shared.log("Refusing suspicious brew cache path: \(output)", level: .warning)
+                        break
+                    }
                     if !brewCachePaths.map(normalizePath).contains(normalized) {
                         brewCachePaths.append(output)
                     }
@@ -439,6 +467,238 @@ actor ScanEngine {
         let uniqueItems = deduplicatedItems(items)
         let totalSize = uniqueItems.reduce(0) { $0 + $1.size }
         return CategoryResult(category: .visualStudioJunk, items: uniqueItems, totalSize: totalSize)
+    }
+
+
+    private func scanNodeCache() -> CategoryResult {
+        // Each entry is `(displayName, defaultPath, optional CLI for cache-dir
+        // detection)`. The CLI invocation overrides `defaultPath` if the user
+        // has set a custom location (e.g. via `npm config set cache`).
+        struct ManagerCache {
+            let name: String
+            let defaultPath: String
+            let detectionCommand: (cli: String, args: [String])?
+        }
+
+        let managers: [ManagerCache] = [
+            ManagerCache(
+                name: "npm cache",
+                defaultPath: "\(home)/.npm",
+                detectionCommand: (cli: "npm", args: ["config", "get", "cache"])
+            ),
+            ManagerCache(
+                name: "yarn classic cache",
+                defaultPath: "\(home)/Library/Caches/Yarn",
+                detectionCommand: (cli: "yarn", args: ["cache", "dir"])
+            ),
+            // Yarn Berry / v2+ uses a per-project .yarn/cache. We don't try to
+            // chase those — they're inside user projects and shouldn't be
+            // touched by a system cleaner. The classic cache above remains the
+            // global, safe-to-clean location.
+            ManagerCache(
+                name: "pnpm content-addressable store",
+                defaultPath: "\(home)/Library/pnpm/store",
+                detectionCommand: (cli: "pnpm", args: ["store", "path"])
+            ),
+        ]
+
+        var items: [CleanableItem] = []
+
+        // Common $PATH locations on macOS where these CLIs land.
+        let cliSearchPaths = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "\(home)/.local/bin",
+            "\(home)/.volta/bin",
+            "\(home)/.nvm/versions/node",
+        ]
+
+        for manager in managers {
+            var paths: [String] = []
+            paths.append(manager.defaultPath)
+
+            if let cmd = manager.detectionCommand,
+               let cliPath = locateExecutable(named: cmd.cli, searchPaths: cliSearchPaths),
+               let detected = runCommandReadingStdout(executable: cliPath, args: cmd.args) {
+                let normalized = detected.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !normalized.isEmpty,
+                   !paths.map(normalizePath).contains(normalizePath(normalized)) {
+                    paths.append(normalized)
+                }
+            }
+
+            for path in paths {
+                guard fileManager.fileExists(atPath: path) else { continue }
+                let size = directorySize(path: path)
+                guard size > 0 else { continue }
+                items.append(CleanableItem(
+                    name: manager.name,
+                    path: path,
+                    size: size,
+                    category: .nodeCache,
+                    isSelected: true,
+                    lastModified: nil
+                ))
+            }
+        }
+
+        let totalSize = items.reduce(0) { $0 + $1.size }
+        return CategoryResult(category: .nodeCache, items: items, totalSize: totalSize)
+    }
+
+    // -- Process helpers (used by scanNodeCache) --
+
+    private func locateExecutable(named name: String, searchPaths: [String]) -> String? {
+        for dir in searchPaths {
+            let candidate = (dir as NSString).appendingPathComponent(name)
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+            // For nvm: ~/.nvm/versions/node/<version>/bin/<name>
+            if dir.hasSuffix("/.nvm/versions/node"),
+               let versions = try? fileManager.contentsOfDirectory(atPath: dir) {
+                for v in versions {
+                    let nested = (dir as NSString).appendingPathComponent("\(v)/bin/\(name)")
+                    if fileManager.isExecutableFile(atPath: nested) {
+                        return nested
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func runCommandReadingStdout(executable: String, args: [String]) -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = args
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            Logger.shared.log("\(executable) \(args.joined(separator: " ")) failed: \(error.localizedDescription)", level: .warning)
+            return nil
+        }
+        guard task.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func scanDockerCache() -> CategoryResult {
+        var items: [CleanableItem] = []
+
+        // Docker Desktop on macOS keeps its VM disk + caches under
+        // ~/Library/Containers/com.docker.docker/Data. The caches we
+        // surface here are *recoverable* — they will be regenerated by
+        // Docker on next pull/build, and `docker system prune` is the
+        // CLI equivalent of cleaning them.
+        let dockerDataDirs = [
+            // Build cache (BuildKit), per-user
+            "\(home)/Library/Containers/com.docker.docker/Data/cache",
+            // Vmnetd / vpnkit log + telemetry caches
+            "\(home)/Library/Containers/com.docker.docker/Data/log",
+            "\(home)/Library/Containers/com.docker.docker/Data/tmp",
+            // Group containers caches (Docker Desktop helper apps)
+            "\(home)/Library/Group Containers/group.com.docker/Caches",
+            // CLI plugin download cache
+            "\(home)/.docker/cli-plugins/.cache",
+            // Buildx / containerd inline cache
+            "\(home)/.docker/buildx/cache",
+        ]
+
+        for path in dockerDataDirs {
+            guard fileManager.fileExists(atPath: path) else { continue }
+            let size = directorySize(path: path)
+            guard size > 0 else { continue }
+            items.append(CleanableItem(
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                path: path,
+                size: size,
+                category: .dockerCache,
+                isSelected: true,
+                lastModified: nil
+            ))
+        }
+
+        // If the `docker` CLI is available, surface reclaimable space
+        // reported by `docker system df` as a single virtual entry.
+        // We don't try to delete it directly — the user runs
+        // `docker system prune` themselves, which is the safe path.
+        // We just show how much they can recover.
+        let dockerBinPaths = ["/usr/local/bin/docker", "/opt/homebrew/bin/docker"]
+        for dockerBin in dockerBinPaths where fileManager.fileExists(atPath: dockerBin) {
+            if let reclaimable = reclaimableDockerSpace(dockerBin: dockerBin), reclaimable > 0 {
+                items.append(CleanableItem(
+                    name: "Reclaimable (run `docker system prune -af`)",
+                    path: dockerBin,
+                    size: reclaimable,
+                    category: .dockerCache,
+                    isSelected: false,
+                    lastModified: nil
+                ))
+            }
+            break
+        }
+
+        let totalSize = items.reduce(0) { $0 + $1.size }
+        return CategoryResult(category: .dockerCache, items: items, totalSize: totalSize)
+    }
+
+    /// Sum the reclaimable bytes reported by `docker system df --format json`.
+    /// Returns nil when Docker isn't running or the command fails — callers
+    /// should treat that as "no reclaimable info available", not as an error.
+    private func reclaimableDockerSpace(dockerBin: String) -> Int64? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: dockerBin)
+        task.arguments = ["system", "df", "--format", "{{.Reclaimable}}"]
+        let stdoutPipe = Pipe()
+        task.standardOutput = stdoutPipe
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            Logger.shared.log("docker system df failed: \(error.localizedDescription)", level: .warning)
+            return nil
+        }
+        guard task.terminationStatus == 0 else { return nil }
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        // Each line looks like e.g. "1.234GB (45%)" — parse the leading number.
+        var total: Int64 = 0
+        for line in output.split(separator: "\n") {
+            let raw = line.split(separator: " ").first.map(String.init) ?? ""
+            if let bytes = parseHumanBytes(raw) {
+                total += bytes
+            }
+        }
+        return total
+    }
+
+    /// Parse Docker's compact size format ("1.23GB", "456MB", "789kB") into bytes.
+    private func parseHumanBytes(_ s: String) -> Int64? {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        let units: [(String, Double)] = [
+            ("TB", 1_000_000_000_000),
+            ("GB", 1_000_000_000),
+            ("MB", 1_000_000),
+            ("kB", 1_000),
+            ("KB", 1_000),
+            ("B", 1),
+        ]
+        for (suffix, multiplier) in units {
+            if trimmed.hasSuffix(suffix) {
+                let numberPart = String(trimmed.dropLast(suffix.count))
+                if let value = Double(numberPart) {
+                    return Int64(value * multiplier)
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Helpers

@@ -103,16 +103,16 @@ final class AppInfoFetcher {
     }
 
     private func appSize(at url: URL) -> Int64 {
-        // Use Spotlight metadata for fast size lookup
-        if let item = NSMetadataItem(url: url),
-           let size = item.value(forAttribute: kMDItemFSSize as String) as? Int64 {
-            return size
+        // Try totalFileAllocatedSize on the bundle URL first (fast, accurate)
+        if let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]),
+           let size = values.totalFileAllocatedSize, size > 0 {
+            return Int64(size)
         }
 
-        // Fallback: enumerate files
+        // Enumerate files and sum their sizes
         guard let enumerator = fileManager.enumerator(
             at: url,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return 0 }
 
@@ -120,11 +120,14 @@ final class AppInfoFetcher {
         var count = 0
         for case let fileURL as URL in enumerator {
             count += 1
-            if count > 5000 { break }
-            guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                  values.isRegularFile == true,
-                  let size = values.fileSize else { continue }
-            total += Int64(size)
+            if count > 10000 { break }
+            guard let values = try? fileURL.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { continue }
+            if let allocated = values.totalFileAllocatedSize {
+                total += Int64(allocated)
+            } else if let size = values.fileSize {
+                total += Int64(size)
+            }
         }
         return total
     }

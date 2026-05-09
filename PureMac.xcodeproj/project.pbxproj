@@ -7,12 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		013EF7B96BF046D4DB38FBC5 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 241E0895B09C71AB423B2F9E /* Localizable.strings */; };
 		015C7A8CE16D49F2C445C02A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E751C3B9ED986F1E6D3C8F /* SettingsView.swift */; };
 		0A7B70CBA747ED9FEE20C51A /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5402892366B3F00417FD05F9 /* SidebarView.swift */; };
+		2253F11BDF561B617439C96B /* FullDiskAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E866A1541D289C69144A5E62 /* FullDiskAccessManager.swift */; };
 		27F449EDD1B082FE11FEC9DF /* SchedulerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28181F034530331A550C6A3D /* SchedulerService.swift */; };
 		340E424F759ACCDE7372F99F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5ADDC35F31E40780FB5D017 /* Theme.swift */; };
 		48D1431A7C99C19EEBDB056B /* CleaningEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A8DE5D45BA19E2670B57DC5 /* CleaningEngine.swift */; };
 		826A750D2D7EC14C2AE306A3 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3667D46D8E2004EB4D73835A /* Models.swift */; };
+		876A1CD0E8BF607F805812D8 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73046B055A7353D187BD94FF /* main.swift */; };
 		A221744A723582A6D075A7A0 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86105573F4051764E9E46626 /* ContentView.swift */; };
 		A89DF967EC9E5E8123B2925A /* SmartScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11BA091943263913276F3CCF /* SmartScanView.swift */; };
 		B52938BBD11842631314543D /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B0AF194677EAC1D5568785 /* CategoryDetailView.swift */; };
@@ -20,30 +23,30 @@
 		D9445C2641A8637B65DA5ACE /* ScanEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A711CDF5285F68775D9B5513 /* ScanEngine.swift */; };
 		DDD6BA35DBF32E7A6B5F6F8B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B2EA41E1096FA8E3B916AD13 /* Assets.xcassets */; };
 		EDEF28CAD23E936FBED1783B /* PureMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63581B70F9B10231964E3602 /* PureMacApp.swift */; };
-		F1A2B3C4D5E6F70819203142 /* FullDiskAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607182930A1B2 /* FullDiskAccessManager.swift */; };
-		AA0000000000000000000004 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* Localizable.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		01E751C3B9ED986F1E6D3C8F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		10B0AF194677EAC1D5568785 /* CategoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryDetailView.swift; sourceTree = "<group>"; };
 		11BA091943263913276F3CCF /* SmartScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartScanView.swift; sourceTree = "<group>"; };
+		2641C6376DD6F5889F35510E /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		28181F034530331A550C6A3D /* SchedulerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchedulerService.swift; sourceTree = "<group>"; };
 		2A8DE5D45BA19E2670B57DC5 /* CleaningEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleaningEngine.swift; sourceTree = "<group>"; };
 		311078221878708524283765 /* PureMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PureMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3667D46D8E2004EB4D73835A /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		46660271CFF167AB0FE7371D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		A1B2C3D4E5F607182930A1B2 /* FullDiskAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullDiskAccessManager.swift; sourceTree = "<group>"; };
 		5402892366B3F00417FD05F9 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		5664D2BDAEAA9AE3A53DB364 /* PureMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PureMac.entitlements; sourceTree = "<group>"; };
 		63581B70F9B10231964E3602 /* PureMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PureMacApp.swift; sourceTree = "<group>"; };
+		73046B055A7353D187BD94FF /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		86105573F4051764E9E46626 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		9F04B811BB0012F6D2F07F91 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A711CDF5285F68775D9B5513 /* ScanEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanEngine.swift; sourceTree = "<group>"; };
 		B2EA41E1096FA8E3B916AD13 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C5ADDC35F31E40780FB5D017 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		DD7FDA1B749FFA61DFB52AB5 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
-		AA0000000000000000000001 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
-		AA0000000000000000000002 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		E60F78B034B86DCACEFBAF54 /* puremaccli */ = {isa = PBXFileReference; includeInIndex = 0; path = puremaccli; sourceTree = BUILT_PRODUCTS_DIR; };
+		E866A1541D289C69144A5E62 /* FullDiskAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullDiskAccessManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -51,6 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				E383F69184F4552E5A41D010 /* PureMac */,
+				4BA6BC89C690F4F11BE03030 /* PureMacCLI */,
 				4562CA9E5625FA4EEEFECB6D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				311078221878708524283765 /* PureMac.app */,
+				E60F78B034B86DCACEFBAF54 /* puremaccli */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,11 +88,19 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		4BA6BC89C690F4F11BE03030 /* PureMacCLI */ = {
+			isa = PBXGroup;
+			children = (
+				73046B055A7353D187BD94FF /* main.swift */,
+			);
+			path = PureMacCLI;
+			sourceTree = "<group>";
+		};
 		6184B2EC3D01E6E95633406E /* Services */ = {
 			isa = PBXGroup;
 			children = (
 				2A8DE5D45BA19E2670B57DC5 /* CleaningEngine.swift */,
-				A1B2C3D4E5F607182930A1B2 /* FullDiskAccessManager.swift */,
+				E866A1541D289C69144A5E62 /* FullDiskAccessManager.swift */,
 				A711CDF5285F68775D9B5513 /* ScanEngine.swift */,
 				28181F034530331A550C6A3D /* SchedulerService.swift */,
 			);
@@ -114,8 +127,8 @@
 			isa = PBXGroup;
 			children = (
 				B2EA41E1096FA8E3B916AD13 /* Assets.xcassets */,
-				AA0000000000000000000003 /* Localizable.strings */,
 				46660271CFF167AB0FE7371D /* Info.plist */,
+				241E0895B09C71AB423B2F9E /* Localizable.strings */,
 				5664D2BDAEAA9AE3A53DB364 /* PureMac.entitlements */,
 				63581B70F9B10231964E3602 /* PureMacApp.swift */,
 				7C1729F88C0E5563E1A3DB40 /* Extensions */,
@@ -129,19 +142,24 @@
 		};
 /* End PBXGroup section */
 
-/* Begin PBXVariantGroup section */
-		AA0000000000000000000003 /* Localizable.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				AA0000000000000000000001 /* en */,
-				AA0000000000000000000002 /* zh-Hans */,
-			);
-			name = Localizable.strings;
-			sourceTree = "<group>";
-		};
-/* End PBXVariantGroup section */
-
 /* Begin PBXNativeTarget section */
+		04227FCF6ED392DD5DFB784C /* puremaccli */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F45345A2B47568E5C046A875 /* Build configuration list for PBXNativeTarget "puremaccli" */;
+			buildPhases = (
+				172AECDC256CA4911D1506F4 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = puremaccli;
+			packageProductDependencies = (
+			);
+			productName = puremaccli;
+			productReference = E60F78B034B86DCACEFBAF54 /* puremaccli */;
+			productType = "com.apple.product-type.tool";
+		};
 		B19E38DEAA0144A77120F39C /* PureMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 2754925F163D15C85EDF494D /* Build configuration list for PBXNativeTarget "PureMac" */;
@@ -169,6 +187,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					04227FCF6ED392DD5DFB784C = {
+						DevelopmentTeam = H3WXHVTP97;
+						ProvisioningStyle = Manual;
+					};
 					B19E38DEAA0144A77120F39C = {
 						DevelopmentTeam = H3WXHVTP97;
 						ProvisioningStyle = Automatic;
@@ -176,6 +198,7 @@
 				};
 			};
 			buildConfigurationList = 2ABAFAE07AA42044AE58F688 /* Build configuration list for PBXProject "PureMac" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -186,11 +209,11 @@
 			mainGroup = 13CF0676D0E93925F46C13AA;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 4562CA9E5625FA4EEEFECB6D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				B19E38DEAA0144A77120F39C /* PureMac */,
+				04227FCF6ED392DD5DFB784C /* puremaccli */,
 			);
 		};
 /* End PBXProject section */
@@ -201,13 +224,21 @@
 			buildActionMask = 2147483647;
 			files = (
 				DDD6BA35DBF32E7A6B5F6F8B /* Assets.xcassets in Resources */,
-				AA0000000000000000000004 /* Localizable.strings in Resources */,
+				013EF7B96BF046D4DB38FBC5 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		172AECDC256CA4911D1506F4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				876A1CD0E8BF607F805812D8 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		63C589367B714FC06B0519E5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -216,8 +247,8 @@
 				B52938BBD11842631314543D /* CategoryDetailView.swift in Sources */,
 				48D1431A7C99C19EEBDB056B /* CleaningEngine.swift in Sources */,
 				A221744A723582A6D075A7A0 /* ContentView.swift in Sources */,
+				2253F11BDF561B617439C96B /* FullDiskAccessManager.swift in Sources */,
 				826A750D2D7EC14C2AE306A3 /* Models.swift in Sources */,
-				F1A2B3C4D5E6F70819203142 /* FullDiskAccessManager.swift in Sources */,
 				EDEF28CAD23E936FBED1783B /* PureMacApp.swift in Sources */,
 				D9445C2641A8637B65DA5ACE /* ScanEngine.swift in Sources */,
 				27F449EDD1B082FE11FEC9DF /* SchedulerService.swift in Sources */,
@@ -230,11 +261,24 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXVariantGroup section */
+		241E0895B09C71AB423B2F9E /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				9F04B811BB0012F6D2F07F91 /* en */,
+				2641C6376DD6F5889F35510E /* zh-Hans */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
 /* Begin XCBuildConfiguration section */
 		0794DC5454CB748EC1374422 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "arm64 x86_64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -270,7 +314,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = H3WXHVTP97;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -292,10 +336,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PureMac/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
-				ONLY_ACTIVE_ARCH = YES;
+				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.puremac.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -304,6 +348,22 @@
 				SWIFT_VERSION = 5.9;
 			};
 			name = Debug;
+		};
+		4470CDE2D2D07DC2DB6DFAAC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.puremac.cli;
+				PRODUCT_NAME = puremaccli;
+				SDKROOT = macosx;
+			};
+			name = Release;
 		};
 		62DEA95205CFC6624F5AE4DA /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -318,10 +378,27 @@
 			};
 			name = Debug;
 		};
+		A98B0FA503E751BBCB4C9EA1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.puremac.cli;
+				PRODUCT_NAME = puremaccli;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
 		D1B9D379DD6CC0DA24E58BCF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "arm64 x86_64";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -357,7 +434,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = H3WXHVTP97;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -373,9 +450,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = PureMac/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.puremac.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -415,6 +493,15 @@
 			buildConfigurations = (
 				0794DC5454CB748EC1374422 /* Debug */,
 				D1B9D379DD6CC0DA24E58BCF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F45345A2B47568E5C046A875 /* Build configuration list for PBXNativeTarget "puremaccli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A98B0FA503E751BBCB4C9EA1 /* Debug */,
+				4470CDE2D2D07DC2DB6DFAAC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

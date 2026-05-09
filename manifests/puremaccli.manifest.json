@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "name": "puremaccli",
+  "displayName": "PureMac CLI",
+  "description": "First-party PureMac command-line interface for host disk hygiene automation by OpenClaw and Hermes.",
+  "firstPartyFor": ["OpenClaw", "Hermes"],
+  "stability": "initial",
+  "executable": "puremaccli",
+  "defaultHome": "/Users/mike",
+  "output": {
+    "format": "json",
+    "stdout": true,
+    "logFiles": true,
+    "latestLogName": "latest.json"
+  },
+  "safety": {
+    "dryRunDefault": true,
+    "executeRequiresFlag": "--execute",
+    "pathContainmentRequired": true,
+    "symlinkDeletion": false,
+    "categories": ["developerBuildArtifacts", "developerPackageCaches", "userCaches"],
+    "deniedRoots": ["/", "/Users", "/Applications", "/Library", "/System", "/bin", "/sbin", "/usr", "/usr/bin", "/usr/sbin", "/opt", "/tmp", "/private/tmp", "/var", "/private/var"]
+  },
+  "successCriteria": {
+    "minimumFreeSpacePercent": 10,
+    "successStatusValues": ["healthy", "success", "no_action_needed"],
+    "partialStatusValues": ["below_threshold", "dry_run", "partial"]
+  },
+  "commands": [
+    {
+      "name": "status",
+      "summary": "Report current disk free-space status against a minimum percentage threshold.",
+      "args": ["--home", "--min-free-percent", "--json"],
+      "mutatesFilesystem": false
+    },
+    {
+      "name": "scan",
+      "summary": "Find safe developer build artifact cleanup candidates under configured roots.",
+      "args": ["--home", "--root", "--json"],
+      "mutatesFilesystem": false
+    },
+    {
+      "name": "clean",
+      "summary": "Clean safe candidates when disk free space is below threshold; dry-run unless --execute is provided.",
+      "args": ["--home", "--root", "--min-free-percent", "--dry-run", "--execute", "--json", "--log-dir"],
+      "mutatesFilesystem": true
+    },
+    {
+      "name": "install-agent",
+      "summary": "Write a LaunchAgent plist for periodic threshold-driven cleanup.",
+      "args": ["--home", "--root", "--interval-minutes", "--min-free-percent", "--json"],
+      "mutatesFilesystem": true
+    },
+    {
+      "name": "uninstall-agent",
+      "summary": "Remove the PureMac cleanup LaunchAgent plist if present.",
+      "args": ["--home", "--json"],
+      "mutatesFilesystem": true
+    }
+  ]
+}

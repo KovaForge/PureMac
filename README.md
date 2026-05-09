@@ -108,11 +108,50 @@ How does PureMac stack up against other Mac cleaning tools?
 
 ## Scheduling
 
+### GUI scheduling
+
 1. Open **Settings** (gear icon or Cmd+,)
 2. Go to the **Schedule** tab
 3. Enable **Automatic Cleaning**
 4. Choose your interval: hourly / 3h / 6h / 12h / daily / weekly / biweekly / monthly
 5. Optionally enable **Auto-clean after scan** and **Auto-purge purgeable space**
+
+### First-party CLI for OpenClaw and Hermes
+
+PureMac also builds `puremaccli`, a JSON-first command-line tool intended for headless host maintenance by OpenClaw and Hermes. It is intentionally simple: a stable manifest and JSON command output, not a plugin runtime.
+
+Build it from source:
+
+```bash
+xcodegen generate
+xcodebuild -project PureMac.xcodeproj -scheme puremaccli -configuration Debug -derivedDataPath build build
+```
+
+Useful commands:
+
+```bash
+# Check the 10% free-space success criterion
+build/Build/Products/Debug/puremaccli status --home /Users/mike --min-free-percent 10 --json
+
+# Dry-run safe Visual Studio/.NET build artifact cleanup under project roots
+build/Build/Products/Debug/puremaccli clean \
+  --home /Users/mike \
+  --root /Users/mike/Projects \
+  --min-free-percent 10 \
+  --dry-run \
+  --json
+
+# Execute only after reviewing dry-run JSON
+build/Build/Products/Debug/puremaccli clean \
+  --home /Users/mike \
+  --root /Users/mike/Projects \
+  --min-free-percent 10 \
+  --execute \
+  --json \
+  --log-dir /Users/mike/Library/Logs/PureMac/cleanup-runs
+```
+
+The first-party contract lives at `manifests/puremaccli.manifest.json`. Current CLI cleanup is conservative and focuses on safe `.NET/Visual Studio` project build outputs (`bin` and `obj`) only when a nearby project marker such as `.csproj`, `.sln`, `Directory.Build.props`, or `global.json` proves build context. It also includes developer package caches such as `~/.nuget/packages`, npm/pip/yarn/pnpm caches, Homebrew cache, and immediate user cache entries under `~/Library/Caches` / `~/.cache` when disk pressure is below the configured threshold.
 
 ## What Gets Cleaned
 

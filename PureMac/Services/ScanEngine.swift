@@ -3,6 +3,13 @@ import Foundation
 actor ScanEngine {
     private let fileManager = FileManager.default
     private let home = FileManager.default.homeDirectoryForCurrentUser.path
+    private let dotNetProjectExtensions = Set(["csproj", "fsproj", "vbproj", "shproj", "vcxproj"])
+    private let visualStudioArtifactDirectoryNames = Set(["bin", "obj"])
+
+    private struct CleanupTarget {
+        let name: String
+        let path: String
+    }
 
     // MARK: - Public API
 
@@ -11,21 +18,25 @@ actor ScanEngine {
         case .smartScan:
             return CategoryResult(category: category, items: [], totalSize: 0)
         case .systemJunk:
-            return await scanSystemJunk()
+            return scanSystemJunk()
+        case .systemData:
+            return scanSystemData()
         case .userCache:
-            return await scanUserCache()
+            return scanUserCache()
         case .mailAttachments:
-            return await scanMailAttachments()
+            return scanMailAttachments()
         case .trashBins:
-            return await scanTrash()
+            return scanTrash()
         case .largeFiles:
-            return await scanLargeFiles()
+            return scanLargeFiles()
         case .purgeableSpace:
-            return await scanPurgeableSpace()
+            return scanPurgeableSpace()
         case .xcodeJunk:
-            return await scanXcodeJunk()
+            return scanXcodeJunk()
+        case .visualStudioJunk:
+            return scanVisualStudioJunk()
         case .brewCache:
-            return await scanBrewCache()
+            return scanBrewCache()
         }
     }
 
@@ -41,18 +52,29 @@ actor ScanEngine {
             }
             info.usedSpace = info.totalSpace - info.freeSpace
 
-            // Calculate purgeable space from Time Machine local snapshots
-            // Purgeable = space used by local snapshots that macOS can reclaim
-            info.purgeableSpace = getLocalSnapshotSize()
+            // Use URLResourceValues for accurate purgeable space detection
+            let rootURL = URL(fileURLWithPath: "/")
+            let values = try rootURL.resourceValues(forKeys: [
+                .volumeAvailableCapacityForImportantUsageKey,
+                .volumeAvailableCapacityKey
+            ])
+            if let importantCapacity = values.volumeAvailableCapacityForImportantUsage,
+               let freeCapacity = values.volumeAvailableCapacity {
+                // Purgeable = important capacity (free + purgeable) minus actual free
+                let purgeable = importantCapacity - Int64(freeCapacity)
+                if purgeable > 10 * 1024 * 1024 { // Only report if > 10 MB
+                    info.purgeableSpace = purgeable
+                }
+            }
         } catch {
-            // Silently fail - disk info is supplementary
+            Logger.shared.log("Disk info unavailable: \(error.localizedDescription)", level: .warning)
         }
         return info
     }
 
     // MARK: - Scanners
 
-    private func scanSystemJunk() async -> CategoryResult {
+    private func scanSystemJunk() -> CategoryResult {
         var items: [CleanableItem] = []
         var totalSize: Int64 = 0
 
@@ -74,23 +96,99 @@ actor ScanEngine {
         return CategoryResult(category: .systemJunk, items: items, totalSize: totalSize)
     }
 
-    private func scanUserCache() async -> CategoryResult {
-        var items: [CleanableItem] = []
+    private func scanSystemData() -> CategoryResult {
+        let items = deduplicatedItems(scanMobileDeviceBackups() + scanMacOSInstallers() + scanMobileSoftwareUpdates())
+            .sorted { $0.size > $1.size }
+        let totalSize = items.reduce(0) { $0 + $1.size }
+        return CategoryResult(category: .systemData, items: items, totalSize: totalSize)
+    }
 
-        let cachePaths = [
-            "\(home)/Library/Caches",
-            "\(home)/Library/Caches/com.apple.Safari",
-            "\(home)/Library/Caches/Google/Chrome",
-            "\(home)/Library/Caches/Firefox",
-            "\(home)/Library/Caches/com.spotify.client",
-            "\(home)/Library/Caches/com.microsoft.VSCode",
-            "\(home)/Library/Caches/Slack",
+    private func scanMobileDeviceBackups() -> [CleanableItem] {
+        let backupRoot = "\(home)/Library/Application Support/MobileSync/Backup"
+        guard let backupNames = try? fileManager.contentsOfDirectory(atPath: backupRoot) else { return [] }
+
+        return backupNames.compactMap { backupName in
+            let backupPath = (backupRoot as NSString).appendingPathComponent(backupName)
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: backupPath, isDirectory: &isDirectory),
+                  isDirectory.boolValue else { return nil }
+
+            let size = directorySize(path: backupPath)
+            guard size > 1024 else { return nil }
+
+            return CleanableItem(
+                name: mobileBackupDisplayName(backupPath: backupPath, fallbackName: backupName),
+                path: backupPath,
+                size: size,
+                category: .systemData,
+                isSelected: false,
+                lastModified: mobileBackupDate(backupPath: backupPath) ?? fileModDate(path: backupPath)
+            )
+        }
+    }
+
+    private func scanMacOSInstallers() -> [CleanableItem] {
+        let appRoots = ["/Applications", "\(home)/Applications"]
+        var installers: [CleanableItem] = []
+
+        for appRoot in appRoots {
+            guard let appNames = try? fileManager.contentsOfDirectory(atPath: appRoot) else { continue }
+
+            for appName in appNames where isMacOSInstallerAppName(appName) {
+                let appPath = (appRoot as NSString).appendingPathComponent(appName)
+                guard fileManager.fileExists(atPath: appPath) else { continue }
+
+                let size = directorySize(path: appPath)
+                guard size > 1024 else { continue }
+
+                installers.append(CleanableItem(
+                    name: appName,
+                    path: appPath,
+                    size: size,
+                    category: .systemData,
+                    isSelected: false,
+                    lastModified: fileModDate(path: appPath)
+                ))
+            }
+        }
+
+        return installers
+    }
+
+    private func scanMobileSoftwareUpdates() -> [CleanableItem] {
+        let updateRoots = [
+            "\(home)/Library/iTunes/iPhone Software Updates",
+            "\(home)/Library/iTunes/iPad Software Updates",
+            "\(home)/Library/iTunes/iPod Software Updates",
         ]
 
-        for path in cachePaths {
-            let scanned = scanDirectory(path: path, category: .userCache, recursive: false, maxDepth: 1)
-            items.append(contentsOf: scanned)
+        return updateRoots.compactMap { path in
+            makeCleanupItem(
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                path: path,
+                category: .systemData,
+                isSelected: false
+            )
         }
+    }
+
+    private func scanUserCache() -> CategoryResult {
+        var items: [CleanableItem] = []
+        // Only exclude Homebrew since it has its own dedicated scan category
+        let excludedRootPaths = Set([
+            "\(home)/Library/Caches/Homebrew",
+        ].map(normalizePath))
+
+        // Dynamically enumerate ~/Library/Caches/ so every subdirectory is visible
+        let cachePath = "\(home)/Library/Caches"
+        let scanned = scanDirectory(
+            path: cachePath,
+            category: .userCache,
+            recursive: false,
+            maxDepth: 1,
+            excluding: excludedRootPaths
+        )
+        items.append(contentsOf: scanned)
 
         // Also scan for npm/pip/yarn caches
         let devCaches = [
@@ -102,26 +200,21 @@ actor ScanEngine {
         ]
 
         for path in devCaches {
-            if fileManager.fileExists(atPath: path) {
-                let size = directorySize(path: path)
-                if size > 0 {
-                    items.append(CleanableItem(
-                        name: URL(fileURLWithPath: path).lastPathComponent,
-                        path: path,
-                        size: size,
-                        category: .userCache,
-                        isSelected: true,
-                        lastModified: nil
-                    ))
-                }
+            if let item = makeCleanupItem(
+                name: URL(fileURLWithPath: path).lastPathComponent,
+                path: path,
+                category: .userCache
+            ) {
+                items.append(item)
             }
         }
 
-        let totalSize = items.reduce(0) { $0 + $1.size }
-        return CategoryResult(category: .userCache, items: items, totalSize: totalSize)
+        let uniqueItems = deduplicatedItems(items)
+        let totalSize = uniqueItems.reduce(0) { $0 + $1.size }
+        return CategoryResult(category: .userCache, items: uniqueItems, totalSize: totalSize)
     }
 
-    private func scanMailAttachments() async -> CategoryResult {
+    private func scanMailAttachments() -> CategoryResult {
         var items: [CleanableItem] = []
 
         let mailPaths = [
@@ -138,7 +231,7 @@ actor ScanEngine {
         return CategoryResult(category: .mailAttachments, items: items, totalSize: totalSize)
     }
 
-    private func scanTrash() async -> CategoryResult {
+    private func scanTrash() -> CategoryResult {
         var items: [CleanableItem] = []
 
         let trashPath = "\(home)/.Trash"
@@ -149,7 +242,7 @@ actor ScanEngine {
         return CategoryResult(category: .trashBins, items: items, totalSize: totalSize)
     }
 
-    private func scanLargeFiles() async -> CategoryResult {
+    private func scanLargeFiles() -> CategoryResult {
         var items: [CleanableItem] = []
         let minSize: Int64 = 100 * 1024 * 1024 // 100 MB
         let oneYearAgo = Calendar.current.date(byAdding: .year, value: -1, to: Date())!
@@ -198,44 +291,45 @@ actor ScanEngine {
         return CategoryResult(category: .largeFiles, items: items, totalSize: totalSize)
     }
 
-    private func scanPurgeableSpace() async -> CategoryResult {
+    private func scanPurgeableSpace() -> CategoryResult {
         var items: [CleanableItem] = []
         var totalSize: Int64 = 0
 
-        // List Time Machine local snapshots - these are the main purgeable items
-        let snapshots = getLocalSnapshots()
-        for snapshot in snapshots {
+        // Detect APFS purgeable space via URLResourceValues (no admin needed)
+        let diskInfo = getDiskInfo()
+        if diskInfo.purgeableSpace > 0 {
             items.append(CleanableItem(
-                name: "TM Snapshot: \(snapshot.name)",
-                path: snapshot.name,
-                size: snapshot.size,
+                name: "APFS Purgeable Space",
+                path: "/",
+                size: diskInfo.purgeableSpace,
                 category: .purgeableSpace,
                 isSelected: true,
-                lastModified: snapshot.date
+                lastModified: nil
             ))
-            totalSize += snapshot.size
+            totalSize = diskInfo.purgeableSpace
         }
 
-        // If no snapshots found but system reports purgeable, show a single entry
-        if items.isEmpty {
-            let diskInfo = getDiskInfo()
-            if diskInfo.purgeableSpace > 0 {
+        // Also list Time Machine local snapshots if any exist
+        let snapshots = getLocalSnapshots()
+        for snapshot in snapshots {
+            let snapshotSize = snapshot.size > 0 ? snapshot.size : 0
+            if snapshotSize > 0 {
                 items.append(CleanableItem(
-                    name: "APFS Purgeable Space",
-                    path: "/",
-                    size: diskInfo.purgeableSpace,
+                    name: "TM Snapshot: \(snapshot.name)",
+                    path: snapshot.name,
+                    size: snapshotSize,
                     category: .purgeableSpace,
-                    isSelected: true,
-                    lastModified: nil
+                    isSelected: false,
+                    lastModified: snapshot.date
                 ))
-                totalSize = diskInfo.purgeableSpace
+                totalSize += snapshotSize
             }
         }
 
         return CategoryResult(category: .purgeableSpace, items: items, totalSize: totalSize)
     }
 
-    private func scanXcodeJunk() async -> CategoryResult {
+    private func scanXcodeJunk() -> CategoryResult {
         var items: [CleanableItem] = []
 
         let xcodePaths = [
@@ -265,17 +359,46 @@ actor ScanEngine {
         return CategoryResult(category: .xcodeJunk, items: items, totalSize: totalSize)
     }
 
-    private func scanBrewCache() async -> CategoryResult {
+    private func scanBrewCache() -> CategoryResult {
         var items: [CleanableItem] = []
 
-        // Homebrew cache locations (Apple Silicon + Intel)
-        let brewCachePaths = [
+        // Default Homebrew download cache
+        var brewCachePaths = [
             "\(home)/Library/Caches/Homebrew",
-            "/opt/homebrew/Caskroom/.metadata",
-            "/usr/local/Caskroom/.metadata",
-            "/opt/homebrew/Cellar/.metadata",
-            "/usr/local/Cellar/.metadata",
         ]
+
+        // Detect custom HOMEBREW_CACHE via `brew --cache`
+        let brewBinPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        var detectedCustomCache = false
+        for brewBin in brewBinPaths {
+            guard fileManager.fileExists(atPath: brewBin) else { continue }
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: brewBin)
+            task.arguments = ["--cache"]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = Pipe()
+            do {
+                try task.run()
+                task.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !output.isEmpty {
+                    let normalized = normalizePath(output)
+                    if !brewCachePaths.map(normalizePath).contains(normalized) {
+                        brewCachePaths.append(output)
+                    }
+                    detectedCustomCache = true
+                }
+            } catch {
+                Logger.shared.log("Failed to run \(brewBin) --cache: \(error.localizedDescription)", level: .warning)
+            }
+            break // Only need the first available brew binary
+        }
+
+        if !detectedCustomCache {
+            Logger.shared.log("Homebrew not found at standard paths; scanning default cache location only", level: .info)
+        }
 
         for path in brewCachePaths {
             if fileManager.fileExists(atPath: path) {
@@ -297,9 +420,76 @@ actor ScanEngine {
         return CategoryResult(category: .brewCache, items: items, totalSize: totalSize)
     }
 
+    private func scanVisualStudioJunk() -> CategoryResult {
+        var items: [CleanableItem] = []
+        let projectDirectories = findVisualStudioProjectDirectories()
+
+        for projectDirectory in projectDirectories {
+            for artifactDirectory in visualStudioArtifactDirectoryNames.sorted() {
+                let artifactPath = (projectDirectory as NSString).appendingPathComponent(artifactDirectory)
+                guard let item = makeCleanupItem(
+                    name: makeVisualStudioArtifactName(projectDirectory: projectDirectory, artifactDirectory: artifactDirectory),
+                    path: artifactPath,
+                    category: .visualStudioJunk
+                ) else { continue }
+                items.append(item)
+            }
+        }
+
+        let uniqueItems = deduplicatedItems(items)
+        let totalSize = uniqueItems.reduce(0) { $0 + $1.size }
+        return CategoryResult(category: .visualStudioJunk, items: uniqueItems, totalSize: totalSize)
+    }
+
     // MARK: - Helpers
 
-    private func scanDirectory(path: String, category: CleaningCategory, recursive: Bool, maxDepth: Int) -> [CleanableItem] {
+    private func findVisualStudioProjectDirectories() -> [String] {
+        let query = dotNetProjectExtensions
+            .sorted()
+            .map { "kMDItemFSName == '*.\($0)'c" }
+            .joined(separator: " || ")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        task.arguments = ["-onlyin", "/", query]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            guard task.terminationStatus == 0 else { return [] }
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let output = String(data: data, encoding: .utf8) else { return [] }
+
+            let directories = output
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { normalizePath(URL(fileURLWithPath: $0).deletingLastPathComponent().path) }
+
+            return Array(Set(directories)).sorted()
+        } catch {
+            Logger.shared.log("mdfind Visual Studio scan failed: \(error.localizedDescription)", level: .warning)
+            return []
+        }
+    }
+
+    private func makeVisualStudioArtifactName(projectDirectory: String, artifactDirectory: String) -> String {
+        let projectName = URL(fileURLWithPath: projectDirectory).lastPathComponent
+        return "\(projectName)/\(artifactDirectory)"
+    }
+
+    private func scanDirectory(
+        path: String,
+        category: CleaningCategory,
+        recursive: Bool,
+        maxDepth: Int,
+        excluding excludedPaths: Set<String> = []
+    ) -> [CleanableItem] {
         var items: [CleanableItem] = []
 
         guard fileManager.fileExists(atPath: path),
@@ -309,9 +499,19 @@ actor ScanEngine {
             let contents = try fileManager.contentsOfDirectory(atPath: path)
             for item in contents {
                 let fullPath = (path as NSString).appendingPathComponent(item)
+                if excludedPaths.contains(normalizePath(fullPath)) {
+                    continue
+                }
 
                 var isDir: ObjCBool = false
                 guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+
+                // Security: skip symlinks to prevent symlink-following attacks
+                if let attrs = try? fileManager.attributesOfItem(atPath: fullPath),
+                   let fileType = attrs[.type] as? FileAttributeType,
+                   fileType == .typeSymbolicLink {
+                    continue
+                }
 
                 if isDir.boolValue {
                     let size = directorySize(path: fullPath)
@@ -340,10 +540,92 @@ actor ScanEngine {
                 }
             }
         } catch {
-            // Permission denied or other error - skip silently
+            Logger.shared.log("Cannot enumerate \(path): \(error.localizedDescription)", level: .warning)
         }
 
         return items
+    }
+
+    private func makeCleanupItem(
+        name: String,
+        path: String,
+        category: CleaningCategory,
+        isSelected: Bool = true
+    ) -> CleanableItem? {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory),
+              fileManager.isReadableFile(atPath: path) else { return nil }
+
+        if isDirectory.boolValue {
+            let size = directorySize(path: path)
+            guard size > 1024 else { return nil }
+            return CleanableItem(
+                name: name,
+                path: path,
+                size: size,
+                category: category,
+                isSelected: isSelected,
+                lastModified: fileModDate(path: path)
+            )
+        }
+
+        guard let attrs = try? fileManager.attributesOfItem(atPath: path),
+              let size = attrs[.size] as? Int64,
+              size > 1024 else { return nil }
+
+        return CleanableItem(
+            name: name,
+            path: path,
+            size: size,
+            category: category,
+            isSelected: isSelected,
+            lastModified: attrs[.modificationDate] as? Date
+        )
+    }
+
+    private func mobileBackupDisplayName(backupPath: String, fallbackName: String) -> String {
+        let infoPath = (backupPath as NSString).appendingPathComponent("Info.plist")
+        guard let info = NSDictionary(contentsOfFile: infoPath) as? [String: Any] else {
+            return "Mobile Device Backup: \(fallbackName)"
+        }
+
+        if let deviceName = info["Device Name"] as? String, !deviceName.isEmpty {
+            return "Mobile Device Backup: \(deviceName)"
+        }
+
+        if let displayName = info["Display Name"] as? String, !displayName.isEmpty {
+            return "Mobile Device Backup: \(displayName)"
+        }
+
+        return "Mobile Device Backup: \(fallbackName)"
+    }
+
+    private func mobileBackupDate(backupPath: String) -> Date? {
+        let infoPath = (backupPath as NSString).appendingPathComponent("Info.plist")
+        guard let info = NSDictionary(contentsOfFile: infoPath) as? [String: Any] else { return nil }
+        return info["Last Backup Date"] as? Date
+    }
+
+    private func isMacOSInstallerAppName(_ appName: String) -> Bool {
+        appName.hasPrefix("Install macOS ") && appName.hasSuffix(".app")
+    }
+
+    private func deduplicatedItems(_ items: [CleanableItem]) -> [CleanableItem] {
+        var seenPaths: Set<String> = []
+        var uniqueItems: [CleanableItem] = []
+
+        for item in items {
+            let normalizedPath = normalizePath(item.path)
+            if seenPaths.insert(normalizedPath).inserted {
+                uniqueItems.append(item)
+            }
+        }
+
+        return uniqueItems
+    }
+
+    private func normalizePath(_ path: String) -> String {
+        (path as NSString).standardizingPath
     }
 
     private func directorySize(path: String) -> Int64 {
@@ -428,17 +710,44 @@ actor ScanEngine {
                 }
             }
         } catch {
-            // tmutil may require admin privileges
+            Logger.shared.log("tmutil listlocalsnapshots failed: \(error.localizedDescription)", level: .info)
         }
 
         return snapshots
     }
 
-    /// Get size of a specific local snapshot
+    /// Get size of a specific local snapshot via APFS snapshot listing
     private func getSnapshotSize(name: String) -> Int64 {
-        // tmutil doesn't directly report individual snapshot sizes easily
-        // Use a reasonable estimate based on total snapshot usage
-        // For accurate per-snapshot sizes we'd need root access
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+        task.arguments = ["apfs", "listSnapshots", "/", "-plist"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let snapshots = plist["Snapshots"] as? [[String: Any]] else {
+                Logger.shared.log("Could not parse APFS snapshot plist for \(name)", level: .info)
+                return 0
+            }
+
+            for snapshot in snapshots {
+                if let snapshotName = snapshot["SnapshotName"] as? String,
+                   snapshotName == name,
+                   let dataSize = snapshot["DataSize"] as? Int64 {
+                    return dataSize
+                }
+            }
+
+            Logger.shared.log("Snapshot \(name) not found in APFS listing", level: .info)
+        } catch {
+            Logger.shared.log("diskutil apfs listSnapshots failed: \(error.localizedDescription)", level: .warning)
+        }
+
         return 0
     }
 
@@ -489,7 +798,7 @@ actor ScanEngine {
                 }
             }
         } catch {
-            // Silently fail
+            Logger.shared.log("Purgeable space detection failed: \(error.localizedDescription)", level: .warning)
         }
 
         return 0

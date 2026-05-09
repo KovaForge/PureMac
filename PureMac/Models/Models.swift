@@ -5,12 +5,14 @@ import SwiftUI
 enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
     case smartScan = "Smart Scan"
     case systemJunk = "System Junk"
+    case systemData = "System Data"
     case userCache = "User Cache"
     case mailAttachments = "Mail Files"
     case trashBins = "Trash Bins"
     case largeFiles = "Large & Old Files"
     case purgeableSpace = "Purgeable Space"
     case xcodeJunk = "Xcode Junk"
+    case visualStudioJunk = "Visual Studio Junk"
     case brewCache = "Brew Cache"
 
     var id: String { rawValue }
@@ -19,12 +21,14 @@ enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .smartScan: return "sparkles"
         case .systemJunk: return "gearshape.fill"
+        case .systemData: return "internaldrive.fill"
         case .userCache: return "internaldrive.fill"
         case .mailAttachments: return "envelope.fill"
         case .trashBins: return "trash.fill"
         case .largeFiles: return "doc.fill"
         case .purgeableSpace: return "arrow.3.trianglepath"
         case .xcodeJunk: return "hammer.fill"
+        case .visualStudioJunk: return "chevron.left.forwardslash.chevron.right"
         case .brewCache: return "mug.fill"
         }
     }
@@ -33,27 +37,31 @@ enum CleaningCategory: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .smartScan: return "Scan everything at once"
         case .systemJunk: return "System caches, logs, and temporary files"
+        case .systemData: return "Mobile device backups and macOS installers"
         case .userCache: return "Application caches and browser data"
         case .mailAttachments: return "Downloaded mail attachments"
         case .trashBins: return "Files in your Trash"
         case .largeFiles: return "Files over 100 MB or older than 1 year"
         case .purgeableSpace: return "APFS purgeable disk space"
         case .xcodeJunk: return "Derived data, archives, and simulators"
+        case .visualStudioJunk: return "bin and obj build outputs from .NET projects"
         case .brewCache: return "Homebrew download cache"
         }
     }
 
     var color: Color {
         switch self {
-        case .smartScan: return .pmAccent
-        case .systemJunk: return .pmGradientEnd
-        case .userCache: return .pmInfo
-        case .mailAttachments: return .pmWarning
-        case .trashBins: return .pmDanger
-        case .largeFiles: return Color(hex: "f97316")
-        case .purgeableSpace: return .pmSuccess
-        case .xcodeJunk: return Color(hex: "06b6d4")
-        case .brewCache: return Color(hex: "84cc16")
+        case .smartScan: return .accentColor
+        case .systemJunk: return .purple
+        case .systemData: return .teal
+        case .userCache: return .blue
+        case .mailAttachments: return .orange
+        case .trashBins: return .red
+        case .largeFiles: return .yellow
+        case .purgeableSpace: return .green
+        case .xcodeJunk: return .cyan
+        case .visualStudioJunk: return .indigo
+        case .brewCache: return .mint
         }
     }
 
@@ -88,7 +96,7 @@ struct CleanableItem: Identifiable, Hashable {
     let path: String
     let size: Int64
     let category: CleaningCategory
-    let isSelected: Bool
+    var isSelected: Bool
     let lastModified: Date?
 
     var formattedSize: String {

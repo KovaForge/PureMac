@@ -1,9 +1,21 @@
 import SwiftUI
 import Combine
+import UserNotifications
+import AppKit
+
+// InstalledApp is defined in AppInfoFetcher.swift
+
+enum AppSection: Hashable {
+    case apps
+    case orphans
+    case cleaning(CleaningCategory)
+}
 
 @MainActor
-class AppViewModel: ObservableObject {
-    // MARK: - State
+final class AppState: ObservableObject {
+
+    // MARK: - Scan / Clean State
+
     @Published var selectedCategory: CleaningCategory = .smartScan
     @Published var scanState: ScanState = .idle
     @Published var categoryResults: [CleaningCategory: CategoryResult] = [:]
@@ -16,8 +28,22 @@ class AppViewModel: ObservableObject {
     @Published var showCleanConfirmation = false
     @Published var lastCleanedDate: Date?
     @Published var deselectedItems: Set<UUID> = []
+    @Published var selectedItems: Set<UUID> = []
     @Published var hasFullDiskAccess: Bool = true
     @Published var fdaBannerDismissed: Bool = false
+
+    // MARK: - App Uninstaller State
+
+    @Published var installedApps: [InstalledApp] = []
+    @Published var selectedApp: InstalledApp?
+    @Published var discoveredFiles: [URL] = []
+    @Published var selectedFiles: Set<URL> = []
+    @Published var orphanedFiles: [URL] = []
+    @Published var isSearchingOrphans: Bool = false
+    @Published var isLoadingApps: Bool = false
+    @Published var isScanningAppFiles: Bool = false
+
+    // MARK: - Services
 
     var scheduler = SchedulerService()
     private let scanEngine = ScanEngine()
@@ -37,17 +63,136 @@ class AppViewModel: ObservableObject {
         CleaningCategory.scannable.compactMap { categoryResults[$0] }.filter { $0.totalSize > 0 }
     }
 
+    var totalSelectedSize: Int64 {
+        allResults.flatMap { $0.items }.filter { isItemSelected($0) }.reduce(0) { $0 + $1.size }
+    }
+
+    // MARK: - Init
+
+    init() {
+        loadDiskInfo()
+        checkFullDiskAccess()
+        loadInstalledApps()
+        scheduler.setTrigger { [weak self] in
+            await self?.runScheduledScan()
+        }
+        scheduler.start()
+    }
+
+    // MARK: - App Loading
+
+    func loadInstalledApps() {
+        isLoadingApps = true
+        Task.detached(priority: .userInitiated) {
+            let apps = AppInfoFetcher.shared.fetchInstalledApps()
+            await MainActor.run { [weak self] in
+                self?.installedApps = apps
+                self?.isLoadingApps = false
+            }
+        }
+    }
+
+    func scanForAppFiles(_ app: InstalledApp) {
+        discoveredFiles = []
+        selectedFiles = []
+        isScanningAppFiles = true
+        let locations = Locations()
+        let appInfo = AppPathFinder.AppInfo(
+            appName: app.appName,
+            bundleIdentifier: app.bundleIdentifier,
+            path: app.path,
+            entitlements: nil,
+            teamIdentifier: nil
+        )
+        let finder = AppPathFinder(appInfo: appInfo, locations: locations)
+        finder.findPathsAsync { [weak self] urls in
+            guard let self else { return }
+            let sorted = urls.sorted { $0.path < $1.path }
+            self.discoveredFiles = sorted
+            self.selectedFiles = urls
+            self.isScanningAppFiles = false
+        }
+    }
+
+    func removeSelectedFiles() {
+        var errors: [String] = []
+        for url in selectedFiles {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                Logger.shared.log("Failed to remove \(url.path): \(error.localizedDescription)", level: .error)
+            }
+        }
+        discoveredFiles.removeAll { selectedFiles.contains($0) }
+        selectedFiles.removeAll()
+        if errors.isEmpty {
+            Logger.shared.log("Successfully removed all selected files", level: .info)
+        }
+    }
+
+    func findOrphans() {
+        isSearchingOrphans = true
+        orphanedFiles = []
+        Task.detached(priority: .userInitiated) {
+            let locations = Locations()
+            let knownApps = await MainActor.run { self.installedApps }
+            let knownIDs = Set(knownApps.map { $0.bundleIdentifier.normalizedForMatching() })
+            let knownNames = Set(knownApps.map { $0.appName.normalizedForMatching() })
+
+            var orphans: [URL] = []
+            let fm = FileManager.default
+
+            for path in locations.reverseSearch.paths {
+                guard let contents = try? fm.contentsOfDirectory(atPath: path) else { continue }
+                for item in contents {
+                    let normalized = item.normalizedForMatching()
+
+                    // Skip known system items
+                    if skipReverse.contains(where: { normalized.hasPrefix($0) }) { continue }
+
+                    // Check if this item belongs to any known app
+                    let belongsToApp = knownIDs.contains(where: { normalized.contains($0) }) ||
+                                       knownNames.contains(where: { normalized.contains($0) })
+
+                    if !belongsToApp {
+                        let fullPath = URL(fileURLWithPath: path).appendingPathComponent(item)
+                        orphans.append(fullPath)
+                    }
+                }
+            }
+
+            let sorted = orphans.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            await MainActor.run { [weak self] in
+                self?.orphanedFiles = sorted
+                self?.isSearchingOrphans = false
+            }
+        }
+    }
+
     // MARK: - Selection
 
     func isItemSelected(_ item: CleanableItem) -> Bool {
-        !deselectedItems.contains(item.id)
+        if item.isSelected {
+            return !deselectedItems.contains(item.id)
+        }
+
+        return selectedItems.contains(item.id)
     }
 
     func toggleItem(_ item: CleanableItem) {
-        if deselectedItems.contains(item.id) {
-            deselectedItems.remove(item.id)
+        if isItemSelected(item) {
+            if item.isSelected {
+                deselectedItems.insert(item.id)
+            } else {
+                selectedItems.remove(item.id)
+            }
         } else {
-            deselectedItems.insert(item.id)
+            if item.isSelected {
+                deselectedItems.remove(item.id)
+            } else {
+                selectedItems.insert(item.id)
+            }
         }
     }
 
@@ -55,13 +200,20 @@ class AppViewModel: ObservableObject {
         guard let result = categoryResults[category] else { return }
         for item in result.items {
             deselectedItems.remove(item.id)
+            if !item.isSelected {
+                selectedItems.insert(item.id)
+            }
         }
     }
 
     func deselectAllInCategory(_ category: CleaningCategory) {
         guard let result = categoryResults[category] else { return }
         for item in result.items {
-            deselectedItems.insert(item.id)
+            if item.isSelected {
+                deselectedItems.insert(item.id)
+            } else {
+                selectedItems.remove(item.id)
+            }
         }
     }
 
@@ -75,19 +227,39 @@ class AppViewModel: ObservableObject {
         return result.items.filter { isItemSelected($0) }.count
     }
 
-    var totalSelectedSize: Int64 {
-        allResults.flatMap { $0.items }.filter { isItemSelected($0) }.reduce(0) { $0 + $1.size }
+    // MARK: - Helper Methods
+
+    func categorySize(for category: CleaningCategory) -> String {
+        guard let result = categoryResults[category], result.totalSize > 0 else { return "" }
+        return result.formattedSize
     }
 
-    // MARK: - Init
+    func categoryBinding(for category: CleaningCategory) -> Binding<Bool> {
+        Binding<Bool>(
+            get: { [weak self] in
+                guard let self else { return false }
+                return self.selectedCountInCategory(category) > 0
+            },
+            set: { [weak self] newValue in
+                guard let self else { return }
+                if newValue {
+                    self.selectAllInCategory(category)
+                } else {
+                    self.deselectAllInCategory(category)
+                }
+            }
+        )
+    }
 
-    init() {
-        loadDiskInfo()
-        checkFullDiskAccess()
-        scheduler.setTrigger { [weak self] in
-            await self?.runScheduledScan()
-        }
-        scheduler.start()
+    func itemBinding(for item: CleanableItem) -> Binding<Bool> {
+        Binding<Bool>(
+            get: { [weak self] in
+                self?.isItemSelected(item) ?? false
+            },
+            set: { [weak self] _ in
+                self?.toggleItem(item)
+            }
+        )
     }
 
     // MARK: - Full Disk Access
@@ -123,6 +295,8 @@ class AppViewModel: ObservableObject {
         categoryResults = [:]
         totalJunkSize = 0
         scanProgress = 0
+        deselectedItems.removeAll()
+        selectedItems.removeAll()
 
         Task {
             let categories = CleaningCategory.scannable
@@ -153,10 +327,11 @@ class AppViewModel: ObservableObject {
 
         Task {
             scanProgress = 0.5
+            deselectedItems.removeAll()
+            selectedItems.removeAll()
             let result = await scanEngine.scanCategory(category)
             categoryResults[category] = result
 
-            // Recalculate total
             totalJunkSize = categoryResults.values.reduce(0) { $0 + $1.totalSize }
             scanProgress = 1.0
             scanState = .completed
@@ -185,13 +360,13 @@ class AppViewModel: ObservableObject {
             totalFreedSpace = result.freedSpace
             lastCleanedDate = Date()
 
-            // Clear results
             categoryResults = [:]
             totalJunkSize = 0
+            deselectedItems.removeAll()
+            selectedItems.removeAll()
             scanState = .cleaned
             loadDiskInfo()
 
-            // Reset state after delay
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             scanState = .idle
             totalFreedSpace = 0
@@ -220,6 +395,10 @@ class AppViewModel: ObservableObject {
 
             categoryResults.removeValue(forKey: category)
             totalJunkSize = categoryResults.values.reduce(0) { $0 + $1.totalSize }
+            for item in selectedItems {
+                deselectedItems.remove(item.id)
+                self.selectedItems.remove(item.id)
+            }
             scanState = .cleaned
             loadDiskInfo()
 
@@ -292,5 +471,3 @@ class AppViewModel: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
 }
-
-import UserNotifications
